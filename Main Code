@@ -1,0 +1,119 @@
+# Importing necessary libraries
+
+import os
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import VGG19
+from tensorflow.keras.layers import Flatten, Dense, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+import tensorflow as tf
+
+
+# Path to our data
+
+DIRECTORY = 'C:/Users/850066558/Desktop/Lung Cancer Detection System/LC25000/lung_colon_image_set/lung_image_sets'
+
+
+# Getting categories from directory
+
+categories = os.listdir(DIRECTORY)
+print(categories)
+class_no = len(categories)
+print(class_no)
+
+
+# Initializing data and labels list
+
+data = []
+label = []
+
+# Loading the images and labels
+
+for i, category in enumerate(categories):
+    path = os.path.join(DIRECTORY, category)
+    for img_name in os.listdir(path):
+        img_path = os.path.join(path, img_name)
+        img = cv2.imread(img_path)
+        if img is None:  # checking if image was properly loaded
+            print(f"Image at {img_path} could not be loaded!")
+            continue
+        img = cv2.resize(img, (64, 64))
+        img = np.array(img)
+        data.append(img)
+        label.append(i)
+
+
+# Converting lists to numpy arrays
+
+data = np.array(data, dtype=np.float32)
+label = np.array(label)
+
+print("Data shape: ", data.shape)
+print("Label shape: ", label.shape)
+
+x_train, x_test, y_train, y_test = train_test_split(data, label, test_size=0.2, random_state=42)
+
+vgg19 = VGG19(weights='imagenet', include_top=False, input_shape=(64, 64, 3))
+
+for layer in vgg19.layers:
+    layer.trainable = False
+
+x = Flatten()(vgg19.output)
+x = Dense(128, activation='relu')(x)
+x = Dropout(0.2)(x)
+x = Dense(class_no , activation='softmax')(x)
+
+model = Model(inputs=vgg19.input, outputs=x)
+
+model.summary()
+
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=5)
+
+mc = ModelCheckpoint('best_model.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+
+history = model.fit(x_train, y_train, epochs=30, batch_size=32, validation_split=0.2, verbose=1, callbacks=[es, mc])
+
+# Saving the model
+
+model.save('my_model.h5')
+
+# Plotting training & validation accuracy values
+
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
+
+# Plotting training & validation loss values
+
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
+
+#Evaluating the model on the test data
+
+score = model.evaluate(x_test, y_test, verbose=0)
+print('Test loss:', score[0])
+print('Test accuracy:', score[1]*100)
+
+saved_model = load_model('best_model.h5')
+
+# Evaluating the saved model on the test data
+
+saved_score = saved_model.evaluate(x_test, y_test, verbose=0)
+print('Saved model test loss:', saved_score[0])
+print('Saved model test accuracy:', saved_score[1]*100)
